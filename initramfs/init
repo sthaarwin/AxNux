@@ -7,90 +7,82 @@ mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
+# Create additional mount points if needed
+mkdir -p /tmp /var/log /dev/pts /dev/shm
+mount -t tmpfs none /tmp
+mount -t devpts devpts /dev/pts
+mount -t tmpfs none /dev/shm
+
 # Set up the environment
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root
 export TERM=linux
-export NANOWM=1  # Enable the Nano-X window manager
+export NANOWM=1  # Enable Nano-X window manager
 export NANOSCREEN=0  # Use screen 0
-
-# Create additional mount points if needed
-mkdir -p /dev/pts /dev/shm
-mount -t devpts devpts /dev/pts
-mount -t tmpfs tmpfs /dev/shm
 
 # Display some debug info
 echo "AxNux with Nano-X window manager"
 echo "Kernel version: $(uname -a)"
-echo "Available devices in /dev:"
-ls -l /dev
-echo "Mounted filesystems:"
-mount
+
+# Debug info about system
+echo "--------- SYSTEM INFO -----------------"
+echo "PATH: $PATH"
+echo "Available executables in /usr/bin/:"
+ls -la /usr/bin/nano*
+echo "Available executables in /usr/bin/ (nx):"
+ls -la /usr/bin/nx*
+echo "----------------------------------------"
 
 # Set up framebuffer
 if [ -e /dev/fb0 ]; then
     echo "Framebuffer found: /dev/fb0"
-    # Set permissions if needed
+    # Set permissions
     chmod 666 /dev/fb0
 else
-    echo "WARNING: No framebuffer device found! Creating one..."
+    echo "WARNING: No framebuffer device found! Attempting to create one..."
     mknod /dev/fb0 c 29 0
     chmod 666 /dev/fb0
+    echo "Created framebuffer device"
 fi
 
 # Start Nano-X window manager
 echo "Starting Nano-X window manager..."
-if [ -x /usr/bin/nano-X ]; then
-    # Start nano-X server
-    /usr/bin/nano-X -v &
-    NANO_X_PID=$!
+if [ -f /usr/bin/nano-X ]; then
+    echo "Found nano-X at /usr/bin/nano-X"
+    
+    # Make sure it's executable
+    chmod +x /usr/bin/nano-X
+    
+    # Run with detailed logging
+    echo "Running nano-X..."
+    /usr/bin/nano-X -v > /tmp/nanox.log 2>&1 &
+    NANO_PID=$!
+    echo "Started with PID: $NANO_PID"
     sleep 2
     
-    # Check if Nano-X started successfully
-    if kill -0 $NANO_X_PID 2>/dev/null; then
-        echo "Nano-X started successfully with PID $NANO_X_PID"
+    # Check if still running
+    if kill -0 $NANO_PID 2>/dev/null; then
+        echo "Nano-X started successfully!"
         
-        # Start the launcher which provides a menu of applications
-        if [ -x /usr/bin/nxlaunch ]; then
-            echo "Starting application launcher..."
-            /usr/bin/nxlaunch &
-            sleep 1
-        fi
-        
-        # Start terminal with bigger size
-        if [ -x /usr/bin/nxterm ]; then
-            echo "Starting terminal..."
-            /usr/bin/nxterm -geometry 80x25+10+10 &
-            sleep 1
+        # Try launching a terminal
+        if [ -f /usr/bin/nxterm ]; then
+            echo "Starting nxterm..."
+            /usr/bin/nxterm &
+            echo "nxterm started"
         else
-            echo "ERROR: nxterm not found!"
+            echo "nxterm not found!"
         fi
-        
-        # Start clock
-        if [ -x /usr/bin/nxclock ]; then
-            echo "Starting clock..."
-            /usr/bin/nxclock -geometry +200+10 &
-            sleep 1
-        fi
-        
-        # Create a flag file to indicate Nano-X is running
-        touch /tmp/nanox_running
-        
-        # Monitor Nano-X server - restart if it crashes
-        while kill -0 $NANO_X_PID 2>/dev/null; do
-            sleep 5
-        done
-        
-        echo "Nano-X server exited, restarting..."
-        exec /init  # Restart the init script if Nano-X crashes
     else
-        echo "ERROR: Nano-X failed to start!"
+        echo "Nano-X failed to start!"
+        echo "Log output:"
+        cat /tmp/nanox.log
     fi
 else
-    echo "ERROR: nano-X not found or not executable!"
-    ls -l /usr/bin/nano*
+    echo "ERROR: nano-X executable not found at /usr/bin/nano-X!"
+    echo "Searching for nano-X in other locations:"
+    find / -name "nano-X" 2>/dev/null
 fi
 
-# If we get here, Nano-X failed to start
-echo "Starting shell for troubleshooting..."
+# Keep init running with a shell for debugging
+echo "Starting shell for debugging..."
 /bin/sh
