@@ -43,6 +43,7 @@ show_help() {
     echo "  -k, --kernel         Use custom kernel (bzImage)"
     echo "  -u, --update-boot    Update boot.img with new initramfs"
     echo "  -d, --debug-init     Apply debugging changes to init script"
+    echo "  --check-init         Check init script for common errors"
     echo ""
     echo "Examples:"
     echo "  $0 --run                   # Run AxNux in QEMU with default settings"
@@ -56,7 +57,43 @@ show_help() {
 # Function to build initramfs
 build_initramfs() {
     echo -e "${YELLOW}Building initramfs...${NC}"
-    find initramfs -print0 | cpio --null -ov --format=newc | gzip -9 > init.cpio
+    
+    # First, ensure init script is executable
+    echo -e "${YELLOW}Checking init script...${NC}"
+    if [ ! -f "initramfs/init" ]; then
+        echo -e "${RED}Error: init script not found!${NC}"
+        exit 1
+    fi
+    
+    # Make sure it's executable
+    chmod +x initramfs/init
+    
+    # Check if init is a shell script and has correct format
+    echo -e "${YELLOW}Validating init script format...${NC}"
+    if head -1 initramfs/init | grep -q "^#!/bin/sh"; then
+        echo -e "${GREEN}Init script has correct shebang line.${NC}"
+    else
+        echo -e "${RED}Warning: Init script doesn't have proper #!/bin/sh shebang!${NC}"
+        echo -e "${YELLOW}Fixing init script format...${NC}"
+        sed -i '1s/^.*$/\#!\/bin\/sh/' initramfs/init
+        echo -e "${GREEN}Init script fixed.${NC}"
+    fi
+    
+    # Build initramfs with careful format specification
+    echo -e "${YELLOW}Building initramfs with init at root level...${NC}"
+    cd initramfs && find . -print0 | cpio --null -o -H newc | gzip -9 > ../init.cpio
+    cd ..
+    
+    # Verify the init file is in the archive
+    echo -e "${YELLOW}Verifying init in archive...${NC}"
+    if gunzip -c init.cpio | cpio -t | grep -q "^\.\/init$"; then
+        echo -e "${GREEN}Init found in archive at correct location.${NC}"
+    else
+        echo -e "${RED}ERROR: Init not found in archive or at wrong location!${NC}"
+        echo -e "${YELLOW}Contents of archive (first few entries):${NC}"
+        gunzip -c init.cpio | cpio -t | head -10
+    fi
+    
     echo -e "${GREEN}Initramfs built successfully!${NC}"
 }
 
@@ -87,7 +124,9 @@ run_axnux() {
     local KERNEL_OPT=""
     local INITRD_OPT=""
     local CONSOLE_OPT="console=tty1"
-    local APPEND_EXTRA="root=/dev/ram0 rdinit=/init"
+    
+    # Simplified root parameters - focus on finding init
+    local APPEND_EXTRA="rdinit=/init"
     
     if [ $USE_KERNEL -eq 1 ]; then
         if [ ! -f "bzImage" ]; then
@@ -136,70 +175,89 @@ fix_init_for_debugging() {
     cat > initramfs/init << 'EOF'
 #!/bin/sh
 
-# Set up the environment
-export HOME=/root
-export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-export TERM=linux
+# Basic init script for AxNux with Nano-X
 
 # Mount essential filesystems
 mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
-# Output debug information
-echo "**** AxNux Debug Info ****"
+# Set up the environment
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/root
+export TERM=linux
+
+# Display some debug info
+echo "AxNux with Nano-X window manager"
 echo "Kernel version: $(uname -a)"
-echo "Available devices:"
-ls -la /dev/
+echo "Available devices in /dev:"
+ls -l /dev
 echo "Mounted filesystems:"
 mount
-echo "**************************"
 
-# Setup framebuffer for Nano-X (if needed)
-if [ -e /sys/class/graphics/fbcon/cursor_blink ]; then
-    echo 0 > /sys/class/graphics/fbcon/cursor_blink
-fi
-
-echo "Setting up framebuffer..."
-if command -v fbset >/dev/null 2>&1; then
-    fbset -i
+# Set up framebuffer
+if [ -e /dev/fb0 ]; then
+    echo "Framebuffer found: /dev/fb0"
 else
-    echo "fbset not available"
+    echo "WARNING: No framebuffer device found!"
 fi
 
-# Run with some error checking
+# Start Nano-X window manager
 echo "Starting Nano-X window manager..."
 if [ -x /usr/bin/nano-X ]; then
-    /usr/bin/nano-X -v &
-    NANO_X_PID=$!
-    sleep 2
-    
-    # Check if Nano-X is running
-    if kill -0 $NANO_X_PID 2>/dev/null; then
-        echo "Nano-X started successfully with PID $NANO_X_PID"
-        
-        # Start a terminal
-        echo "Starting nxterm..."
-        if [ -x /usr/bin/nxterm ]; then
-            /usr/bin/nxterm &
-            echo "nxterm started"
-        else
-            echo "ERROR: nxterm not found or not executable!"
-        fi
-    else
-        echo "ERROR: Nano-X failed to start or crashed!"
-    fi
+    /usr/bin/nano-X &
+    sleep 1
+    echo "Nano-X started"
 else
-    echo "ERROR: nano-X executable not found or not executable!"
+    echo "ERROR: nano-X not found or not executable!"
 fi
 
-# Drop to a shell for debugging
-echo "Starting shell for debugging..."
-/bin/sh
+# Start terminal
+if [ -x /usr/bin/nxterm ]; then
+    /usr/bin/nxterm &
+    echo "nxterm started"
+else
+    echo "ERROR: nxterm not found!"
+fi
+
+# Start shell - this prevents init from exiting
+echo "Starting shell..."
+exec /bin/sh
 EOF
 
+    # Make sure init script is properly executable
     chmod +x initramfs/init
     echo -e "${GREEN}Init script modified for better debugging!${NC}"
+}
+
+# Function to check init script for common errors
+check_init_script() {
+    echo -e "${YELLOW}Checking init script for common errors...${NC}"
+    
+    if [ ! -f "initramfs/init" ]; then
+        echo -e "${RED}Error: init script does not exist!${NC}"
+        return 1
+    fi
+    
+    if [ ! -x "initramfs/init" ]; then
+        echo -e "${RED}Error: init script is not executable!${NC}"
+        echo -e "${YELLOW}Fixing permissions...${NC}"
+        chmod +x initramfs/init
+        echo -e "${GREEN}Fixed.${NC}"
+    fi
+    
+    # Check shebang
+    if ! head -1 initramfs/init | grep -q "^#!/bin/sh"; then
+        echo -e "${RED}Warning: Init script doesn't have proper #!/bin/sh shebang!${NC}"
+    fi
+    
+    # Check for common errors in the script
+    if grep -q "[^-]rm " initramfs/init; then
+        echo -e "${RED}Warning: Init script contains 'rm' command which might be dangerous in init!${NC}"
+    fi
+    
+    echo -e "${GREEN}Init script check completed.${NC}"
+    return 0
 }
 
 # Parse command line arguments
@@ -228,6 +286,8 @@ while [ "$1" != "" ]; do
                                 ;;
         -d | --debug-init )     FIX_INIT=1
                                 ;;
+        --check-init )          CHECK_INIT=1
+                                ;;
         * )                     echo -e "${RED}Unknown parameter: $1${NC}"
                                 show_help
                                 exit 1
@@ -237,9 +297,14 @@ while [ "$1" != "" ]; do
 done
 
 # If no arguments given, show help
-if [ $# -eq 0 ] && [ -z "$RUN_AXNUX" ] && [ $BUILD_INITRAMFS -eq 0 ] && [ $BUILD_ALL -eq 0 ] && [ $UPDATE_BOOT_IMG -eq 0 ] && [ -z "$FIX_INIT" ]; then
+if [ $# -eq 0 ] && [ -z "$RUN_AXNUX" ] && [ $BUILD_INITRAMFS -eq 0 ] && [ $BUILD_ALL -eq 0 ] && [ $UPDATE_BOOT_IMG -eq 0 ] && [ -z "$FIX_INIT" ] && [ -z "$CHECK_INIT" ]; then
     show_help
     exit 0
+fi
+
+# Check init script if requested
+if [ ! -z "$CHECK_INIT" ]; then
+    check_init_script
 fi
 
 # Fix init script if requested
