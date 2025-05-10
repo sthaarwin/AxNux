@@ -17,30 +17,27 @@ mount -t tmpfs none /dev/shm
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root
 export TERM=linux
+export NANOWM=1  # Enable Nano-X window manager
+export NANOSCREEN=0  # Use screen 0
 
 # Display some debug info
 echo "AxNux with Nano-X window manager"
 echo "Kernel version: $(uname -a)"
 
-# Debug info about system
-echo "--------- SYSTEM INFO -----------------"
-echo "PATH: $PATH"
-echo "Available executables in /usr/bin/:"
-ls -la /usr/bin/nano* 2>/dev/null || echo "No nano executables found"
-echo "Available executables in /usr/bin/ (nx):"
-ls -la /usr/bin/nx* 2>/dev/null || echo "No nx executables found"
+# Debug info about environment
+echo "--------- ENVIRONMENT VARIABLES ---------"
+env
 echo "----------------------------------------"
 
-# Check for library dependencies
-echo "--------- LIBRARY CHECK --------------"
-echo "Looking for required libraries:"
-for LIB in libm.so.6 libpng16.so.16 libz.so.1 libfreetype.so.6 libc.so.6; do
-    if find /lib /usr/lib -name "$LIB*" 2>/dev/null | grep -q .; then
-        echo "$LIB: FOUND"
-    else
-        echo "$LIB: MISSING"
-    fi
-done
+# Debug info about framebuffer devices
+echo "--------- FRAMEBUFFER INFO -------------"
+ls -la /dev/fb*
+if [ -e /sys/class/graphics/fb0 ]; then
+  echo "FB0 details:"
+  cat /sys/class/graphics/fb0/name
+  cat /sys/class/graphics/fb0/virtual_size
+  cat /sys/class/graphics/fb0/bits_per_pixel
+fi
 echo "----------------------------------------"
 
 # Set up framebuffer
@@ -55,29 +52,74 @@ else
     echo "Created framebuffer device"
 fi
 
-# Due to library dependencies issue, we can't run Nano-X directly
-echo "Nano-X requires shared libraries that are not available in the initramfs."
-echo "To fix this, you need to either:"
-echo "1. Add the required shared libraries to your initramfs"
-echo "2. Recompile Nano-X statically without dependencies"
-echo "3. Create symlinks to the available libraries"
+# Debug info about libraries
+echo "--------- LIBRARY INFO -----------------"
+echo "Contents of /usr/lib:"
+ls -la /usr/lib
+echo "----------------------------------------"
 
-# Create necessary symlinks or directories if they don't exist
-echo "Creating necessary directories and symlinks..."
-mkdir -p /lib64
-if [ ! -e /lib64/ld-linux-x86-64.so.2 ] && [ -e /lib/ld-linux-x86-64.so.2 ]; then
-    ln -sf /lib/ld-linux-x86-64.so.2 /lib64/ld-linux-x86-64.so.2
-    echo "Created symlink for ld-linux-x86-64.so.2"
+# Start Nano-X window manager with more detailed debugging
+echo "Starting Nano-X window manager..."
+
+# Check if file exists first
+if [ ! -f /usr/bin/nano-X ]; then
+    echo "ERROR: nano-X executable does not exist!"
+    echo "Contents of /usr/bin (partial):"
+    ls -la /usr/bin | grep nano
+    ls -la /usr/bin | grep nx
+    exit 1
 fi
 
-# Show a message with instructions for manual testing
-echo ""
-echo "=========================================="
-echo "To manually test Nano-X, you can try:"
-echo "1. /usr/bin/nano-X -v"
-echo "2. If it works, start an application with: /usr/bin/nxterm"
-echo "=========================================="
+# Check if file is executable
+if [ ! -x /usr/bin/nano-X ]; then
+    echo "ERROR: nano-X exists but is not executable!"
+    ls -la /usr/bin/nano-X
+    chmod +x /usr/bin/nano-X
+    echo "Fixed permissions for nano-X"
+fi
 
-# Keep init running with a shell for debugging
+# Try running Nano-X with verbose logging
+echo "Starting nano-X with verbose logging..."
+/usr/bin/nano-X -v > /tmp/nano-X.log 2>&1 &
+NANO_X_PID=$!
+echo "Started Nano-X with PID: $NANO_X_PID"
+
+# Wait for server to initialize
+sleep 3
+
+# Check if it's still running
+if kill -0 $NANO_X_PID 2>/dev/null; then
+    echo "GOOD: Nano-X started successfully with PID $NANO_X_PID"
+    
+    # Try launching applications
+    if [ -x /usr/bin/nxterm ]; then
+        echo "Starting terminal..."
+        /usr/bin/nxterm > /tmp/nxterm.log 2>&1 &
+        sleep 2
+        echo "nxterm log:"
+        cat /tmp/nxterm.log
+    else
+        echo "ERROR: nxterm not found or not executable!"
+    fi
+else
+    echo "ERROR: Nano-X failed to start or crashed!"
+    echo "Nano-X Log:"
+    cat /tmp/nano-X.log
+    
+    # Try running with different options for debugging
+    echo "Trying Nano-X with different options:"
+    echo "1. Without window manager:"
+    export NANOWM=0
+    /usr/bin/nano-X -v > /tmp/nano-X-nowm.log 2>&1
+    echo "Log without window manager:"
+    cat /tmp/nano-X-nowm.log
+    
+    # Print file info
+    echo "File information for Nano-X binary:"
+    ls -l /usr/bin/nano-X
+    file /usr/bin/nano-X
+fi
+
+# Drop to a shell for manual debugging
 echo "Starting shell for debugging..."
 /bin/sh
