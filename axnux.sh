@@ -79,14 +79,15 @@ build_initramfs() {
         echo -e "${GREEN}Init script fixed.${NC}"
     fi
     
-    # Build initramfs with careful format specification
+    # Build initramfs using a more direct approach
     echo -e "${YELLOW}Building initramfs with init at root level...${NC}"
-    cd initramfs && find . -print0 | cpio --null -o -H newc | gzip -9 > ../init.cpio
+    cd initramfs
+    find . | cpio -H newc -o | gzip -9 > ../init.cpio
     cd ..
     
     # Verify the init file is in the archive
     echo -e "${YELLOW}Verifying init in archive...${NC}"
-    if gunzip -c init.cpio | cpio -t | grep -q "^\.\/init$"; then
+    if gunzip -c init.cpio | cpio -t | grep -q "^./init$"; then
         echo -e "${GREEN}Init found in archive at correct location.${NC}"
     else
         echo -e "${RED}ERROR: Init not found in archive or at wrong location!${NC}"
