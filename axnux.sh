@@ -1,7 +1,7 @@
 #!/bin/bash
 # AxNux Management Script
 # Created: May 12, 2025
-# Description: A script to simplify working with AxNux and Nano-X window manager
+# Description: A script to simplify working with AxNux 
 
 # Default settings
 QEMU_MEMORY=256
@@ -68,6 +68,17 @@ build_initramfs() {
     # Make sure it's executable
     chmod +x initramfs/init
     
+    # Check axcode in bin directory
+    echo -e "${YELLOW}Checking axcode utility...${NC}"
+    if [ ! -f "initramfs/bin/axcode" ]; then
+        echo -e "${RED}Error: axcode not found in initramfs/bin!${NC}"
+        exit 1
+    fi
+    
+    # Make sure axcode is executable
+    chmod +x initramfs/bin/axcode
+    echo -e "${GREEN}axcode confirmed executable${NC}"
+    
     # Check if init is a shell script and has correct format
     echo -e "${YELLOW}Validating init script format...${NC}"
     if head -1 initramfs/init | grep -q "^#!/bin/sh"; then
@@ -79,37 +90,44 @@ build_initramfs() {
         echo -e "${GREEN}Init script fixed.${NC}"
     fi
     
-    # Build initramfs using a more direct approach
-    echo -e "${YELLOW}Building initramfs with init at root level...${NC}"
-    
-    # Create a simple init script at the root to transfer control to the real init
-    mkdir -p /tmp/axnux_build/
-    
-    # Copy the init script to the temporary directory
-    cp initramfs/init /tmp/axnux_build/init
-    chmod +x /tmp/axnux_build/init
-    
-    # Copy all other files from initramfs directory
-    cp -a initramfs/bin /tmp/axnux_build/
-    cp -a initramfs/sbin /tmp/axnux_build/
-    cp -a initramfs/usr /tmp/axnux_build/
-    cp -a initramfs/home /tmp/axnux_build/
-    
-    # Create the initramfs
-    (cd /tmp/axnux_build && find . | cpio -H newc -o | gzip -9 > /home/axzyte/code/C/AxNux/init.cpio)
-    
-    # Clean up
-    rm -rf /tmp/axnux_build
-    
-    # Verify the init file is in the archive
-    echo -e "${YELLOW}Verifying init in archive...${NC}"
-    if gunzip -c init.cpio | cpio -t | grep -q "^./init$"; then
-        echo -e "${GREEN}Init found in archive at correct location.${NC}"
-    else
-        echo -e "${RED}ERROR: Init not found in archive or at wrong location!${NC}"
-        echo -e "${YELLOW}Contents of archive (first few entries):${NC}"
-        gunzip -c init.cpio | cpio -it | head -10
+    # Add debug info to the init script to help diagnose PATH issues
+    echo -e "${YELLOW}Adding axcode debug to init script...${NC}"
+    if ! grep -q "DEBUG: PATH=" initramfs/init; then
+        # Add these debugging lines before "Start shell" line
+        sed -i '/# Start shell/i # Debug PATH and axcode\necho "DEBUG: PATH=$PATH"\necho "DEBUG: which axcode: $(which axcode 2>&1)"\necho "DEBUG: ls -la /bin/axcode:"\nls -la /bin/axcode\necho "DEBUG: Testing axcode directly:"\n/bin/axcode --version 2>&1 || echo "Failed to execute axcode directly"\n' initramfs/init
     fi
+    
+    # Build initramfs correctly
+    echo -e "${YELLOW}Building initramfs...${NC}"
+    
+    # Create initramfs from the initramfs directory
+    echo -e "${YELLOW}Creating initramfs archive...${NC}"
+    cd initramfs
+    find . | cpio -H newc -o | gzip > ../init.cpio
+    cd ..
+    
+    # Verify the content of the archive
+    echo -e "${YELLOW}Verifying archive contents...${NC}"
+    
+    # Look for init and bin/axcode in the archive
+    local init_found=$(gunzip -c init.cpio | cpio -t | grep -c "^init$\|^./init$")
+    local axcode_found=$(gunzip -c init.cpio | cpio -t | grep -c "bin/axcode\|^./bin/axcode$")
+    
+    if [ "$init_found" -gt 0 ]; then
+        echo -e "${GREEN}Init found in archive.${NC}"
+    else
+        echo -e "${RED}WARNING: Init not found in archive!${NC}"
+    fi
+    
+    if [ "$axcode_found" -gt 0 ]; then
+        echo -e "${GREEN}axcode found in archive.${NC}"
+    else
+        echo -e "${RED}WARNING: axcode not found in archive!${NC}"
+    fi
+    
+    # Show the first few entries to help diagnose structure
+    echo -e "${YELLOW}Archive structure (first 10 entries):${NC}"
+    gunzip -c init.cpio | cpio -t | head -10
     
     echo -e "${GREEN}Initramfs built successfully!${NC}"
 }

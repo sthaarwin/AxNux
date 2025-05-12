@@ -11,8 +11,12 @@ mount -t devtmpfs none /dev
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root
 export TERM=linux
+# Set the terminfo path so ncurses applications can find the terminal definitions
+export TERMINFO=/usr/share/terminfo
 
 # Display some debug info
+ls -la /bin/axcode
+echo "axcode location: $(which axcode 2>/dev/null || echo "not in PATH")"
 echo "AxNux with Nano-X window manager"
 echo "Kernel version: $(uname -a)"
 echo "Available devices in /dev:"
@@ -27,16 +31,6 @@ else
     echo "WARNING: No framebuffer device found!"
 fi
 
-# Start Nano-X window manager
-echo "Starting Nano-X window manager..."
-if [ -x /usr/bin/nano-X ]; then
-    /usr/bin/nano-X &
-    sleep 1
-    echo "Nano-X started"
-else
-    echo "ERROR: nano-X not found or not executable!"
-fi
-
 # Start terminal
 if [ -x /usr/bin/nxterm ]; then
     /usr/bin/nxterm &
@@ -44,6 +38,14 @@ if [ -x /usr/bin/nxterm ]; then
 else
     echo "ERROR: nxterm not found!"
 fi
+
+# # Debug PATH and axcode
+# echo "DEBUG: PATH=$PATH"
+# echo "DEBUG: which axcode: $(which axcode 2>&1)"
+# echo "DEBUG: ls -la /bin/axcode:"
+# ls -la /bin/axcode
+# echo "DEBUG: Testing axcode directly:"
+# /bin/axcode --version 2>&1 || echo "Failed to execute axcode directly"
 
 # Start shell - this prevents init from exiting
 echo "Starting shell..."
