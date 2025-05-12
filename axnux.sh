@@ -1,6 +1,6 @@
 #!/bin/bash
 # AxNux Management Script
-# Created: May 10, 2025
+# Created: May 12, 2025
 # Description: A script to simplify working with AxNux and Nano-X window manager
 
 # Default settings
@@ -81,9 +81,25 @@ build_initramfs() {
     
     # Build initramfs using a more direct approach
     echo -e "${YELLOW}Building initramfs with init at root level...${NC}"
-    cd initramfs
-    find . | cpio -H newc -o | gzip -9 > ../init.cpio
-    cd ..
+    
+    # Create a simple init script at the root to transfer control to the real init
+    mkdir -p /tmp/axnux_build/
+    
+    # Copy the init script to the temporary directory
+    cp initramfs/init /tmp/axnux_build/init
+    chmod +x /tmp/axnux_build/init
+    
+    # Copy all other files from initramfs directory
+    cp -a initramfs/bin /tmp/axnux_build/
+    cp -a initramfs/sbin /tmp/axnux_build/
+    cp -a initramfs/usr /tmp/axnux_build/
+    cp -a initramfs/home /tmp/axnux_build/
+    
+    # Create the initramfs
+    (cd /tmp/axnux_build && find . | cpio -H newc -o | gzip -9 > /home/axzyte/code/C/AxNux/init.cpio)
+    
+    # Clean up
+    rm -rf /tmp/axnux_build
     
     # Verify the init file is in the archive
     echo -e "${YELLOW}Verifying init in archive...${NC}"
@@ -92,7 +108,7 @@ build_initramfs() {
     else
         echo -e "${RED}ERROR: Init not found in archive or at wrong location!${NC}"
         echo -e "${YELLOW}Contents of archive (first few entries):${NC}"
-        gunzip -c init.cpio | cpio -t | head -10
+        gunzip -c init.cpio | cpio -it | head -10
     fi
     
     echo -e "${GREEN}Initramfs built successfully!${NC}"
@@ -126,8 +142,9 @@ run_axnux() {
     local INITRD_OPT=""
     local CONSOLE_OPT="console=tty1"
     
-    # Simplified root parameters - focus on finding init
-    local APPEND_EXTRA="rdinit=/init"
+    # Fix the kernel parameters to properly recognize initramfs as root
+    # The critical fix is adding rootfstype=ramfs
+    local APPEND_EXTRA="root=/dev/ram0 rootfstype=ramfs rw ramdisk_size=65536 rdinit=/init"
     
     if [ $USE_KERNEL -eq 1 ]; then
         if [ ! -f "bzImage" ]; then

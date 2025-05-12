@@ -29,8 +29,8 @@ chmod +x $TEMP_DIR/init
 # Create the initramfs from the temp directory
 echo "Creating initramfs archive..."
 cd $TEMP_DIR
-find . | cpio -H newc -o | gzip > /home/axzyte/code/C/AxNux/init.cpio
-cd /home/axzyte/code/C/AxNux
+find . | cpio -H newc -o | gzip > ../init.cpio
+cd ..
 
 # Clean up
 echo "Cleaning up temporary directory..."

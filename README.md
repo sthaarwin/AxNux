@@ -13,6 +13,7 @@ AxNux is a lightweight Linux distribution designed to be minimal, efficient, and
 - Simple init system
 - Custom kernel configuration
 - Small footprint (fits in a 50MB boot image)
+- Nano-X Window Manager support
 
 ## Boot Components
 
@@ -37,6 +38,27 @@ To build AxNux from source:
    syslinux bootdir/boot.img
    ```
 
+## Management Script
+
+The `axnux.sh` script provides an easy way to build, manage and run AxNux:
+
+```bash
+Usage: ./axnux.sh [options]
+
+Options:
+  -h, --help           Show help message
+  -r, --run            Run AxNux in QEMU
+  -m, --memory SIZE    Set QEMU memory size in MB (default: 256)
+  -c, --cores NUMBER   Set number of CPU cores (default: 1)
+  -s, --serial         Use serial console instead of graphical
+  -b, --build          Build initramfs
+  -a, --all            Build all (initramfs and update boot img)
+  -k, --kernel         Use custom kernel (bzImage)
+  -u, --update-boot    Update boot.img with new initramfs
+```
+
+Example: `./axnux.sh --build --run --memory 512`
+
 ## Booting with QEMU
 
 You can test the distribution in QEMU with:
@@ -45,9 +67,27 @@ You can test the distribution in QEMU with:
 qemu-system-x86_64 -drive format=raw,file=bootdir/boot.img
 ```
 
+Or more easily using the management script:
+
+```bash
+./axnux.sh --run
+```
+
 ## Directory Structure
 
-The main components of the system are:
+The project contains the following key files and directories:
+
+- `axnux.sh`: Main management script
+- `build_initramfs.sh`: Script to build the initial RAM filesystem
+- `bzImage`: Linux kernel image
+- `init.cpio`: Compressed initial RAM filesystem
+- `bootdir/boot.img`: Bootable disk image
+- `initramfs/`: Directory containing all files that go into the RAM filesystem
+  - `init`: Init script that runs when the system boots
+  - `bin/`, `sbin/`: Essential system binaries
+  - `usr/bin/`, `usr/sbin/`: Additional utilities
+
+The booted system contains:
 - `/bin`, `/sbin`: Essential system binaries
 - `/usr/bin`, `/usr/sbin`: Additional utilities
 - `/etc`: Configuration files

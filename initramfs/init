@@ -7,119 +7,44 @@ mount -t proc none /proc
 mount -t sysfs none /sys
 mount -t devtmpfs none /dev
 
-# Create additional mount points if needed
-mkdir -p /tmp /var/log /dev/pts /dev/shm
-mount -t tmpfs none /tmp
-mount -t devpts devpts /dev/pts
-mount -t tmpfs none /dev/shm
-
 # Set up the environment
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root
 export TERM=linux
-export NANOWM=1  # Enable Nano-X window manager
-export NANOSCREEN=0  # Use screen 0
 
 # Display some debug info
 echo "AxNux with Nano-X window manager"
 echo "Kernel version: $(uname -a)"
-
-# Debug info about environment
-echo "--------- ENVIRONMENT VARIABLES ---------"
-env
-echo "----------------------------------------"
-
-# Debug info about framebuffer devices
-echo "--------- FRAMEBUFFER INFO -------------"
-ls -la /dev/fb*
-if [ -e /sys/class/graphics/fb0 ]; then
-  echo "FB0 details:"
-  cat /sys/class/graphics/fb0/name
-  cat /sys/class/graphics/fb0/virtual_size
-  cat /sys/class/graphics/fb0/bits_per_pixel
-fi
-echo "----------------------------------------"
+echo "Available devices in /dev:"
+ls -l /dev
+echo "Mounted filesystems:"
+mount
 
 # Set up framebuffer
 if [ -e /dev/fb0 ]; then
     echo "Framebuffer found: /dev/fb0"
-    # Set permissions
-    chmod 666 /dev/fb0
 else
-    echo "WARNING: No framebuffer device found! Attempting to create one..."
-    mknod /dev/fb0 c 29 0
-    chmod 666 /dev/fb0
-    echo "Created framebuffer device"
+    echo "WARNING: No framebuffer device found!"
 fi
 
-# Debug info about libraries
-echo "--------- LIBRARY INFO -----------------"
-echo "Contents of /usr/lib:"
-ls -la /usr/lib
-echo "----------------------------------------"
-
-# Start Nano-X window manager with more detailed debugging
+# Start Nano-X window manager
 echo "Starting Nano-X window manager..."
-
-# Check if file exists first
-if [ ! -f /usr/bin/nano-X ]; then
-    echo "ERROR: nano-X executable does not exist!"
-    echo "Contents of /usr/bin (partial):"
-    ls -la /usr/bin | grep nano
-    ls -la /usr/bin | grep nx
-    exit 1
-fi
-
-# Check if file is executable
-if [ ! -x /usr/bin/nano-X ]; then
-    echo "ERROR: nano-X exists but is not executable!"
-    ls -la /usr/bin/nano-X
-    chmod +x /usr/bin/nano-X
-    echo "Fixed permissions for nano-X"
-fi
-
-# Try running Nano-X with verbose logging
-echo "Starting nano-X with verbose logging..."
-/usr/bin/nano-X -v > /tmp/nano-X.log 2>&1 &
-NANO_X_PID=$!
-echo "Started Nano-X with PID: $NANO_X_PID"
-
-# Wait for server to initialize
-sleep 3
-
-# Check if it's still running
-if kill -0 $NANO_X_PID 2>/dev/null; then
-    echo "GOOD: Nano-X started successfully with PID $NANO_X_PID"
-    
-    # Try launching applications
-    if [ -x /usr/bin/nxterm ]; then
-        echo "Starting terminal..."
-        /usr/bin/nxterm > /tmp/nxterm.log 2>&1 &
-        sleep 2
-        echo "nxterm log:"
-        cat /tmp/nxterm.log
-    else
-        echo "ERROR: nxterm not found or not executable!"
-    fi
+if [ -x /usr/bin/nano-X ]; then
+    /usr/bin/nano-X &
+    sleep 1
+    echo "Nano-X started"
 else
-    echo "ERROR: Nano-X failed to start or crashed!"
-    echo "Nano-X Log:"
-    cat /tmp/nano-X.log
-    
-    # Try running with different options for debugging
-    echo "Trying Nano-X with different options:"
-    echo "1. Without window manager:"
-    export NANOWM=0
-    /usr/bin/nano-X -v > /tmp/nano-X-nowm.log 2>&1
-    echo "Log without window manager:"
-    cat /tmp/nano-X-nowm.log
-    
-    # Print file info
-    echo "File information for Nano-X binary:"
-    ls -l /usr/bin/nano-X
-    file /usr/bin/nano-X
+    echo "ERROR: nano-X not found or not executable!"
 fi
 
-# Drop to a shell for manual debugging
-echo "Starting shell for debugging..."
-/bin/sh
+# Start terminal
+if [ -x /usr/bin/nxterm ]; then
+    /usr/bin/nxterm &
+    echo "nxterm started"
+else
+    echo "ERROR: nxterm not found!"
+fi
+
+# Start shell - this prevents init from exiting
+echo "Starting shell..."
+exec /bin/sh
